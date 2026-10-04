@@ -13,17 +13,27 @@ CREATE DATABASE IF NOT EXISTS abroad_fund
 
 USE abroad_fund;
 
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(100) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  role ENUM('user', 'admin') DEFAULT 'user',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS settings (
-  id TINYINT UNSIGNED NOT NULL,
-  revision INT UNSIGNED NOT NULL,
+  user_id INT NOT NULL,
+  revision INT UNSIGNED NOT NULL DEFAULT 0,
   account_name VARCHAR(200) NOT NULL,
-  opening_balance DECIMAL(14, 2) NOT NULL,
-  target DECIMAL(14, 2) NOT NULL,
-  PRIMARY KEY (id)
+  opening_balance DECIMAL(14, 2) NOT NULL DEFAULT 0,
+  target DECIMAL(14, 2) NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS entries (
   id CHAR(36) NOT NULL,
+  user_id INT NOT NULL,
   type ENUM('in', 'out') NOT NULL,
   amount DECIMAL(14, 2) NOT NULL,
   entry_date DATE NOT NULL,
@@ -32,26 +42,12 @@ CREATE TABLE IF NOT EXISTS entries (
   created_at DATETIME(3) NOT NULL,
   updated_at DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
-  KEY idx_entries_date (entry_date, created_at)
+  KEY idx_entries_date (entry_date, created_at),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-INSERT INTO settings (id, revision, account_name, opening_balance, target)
-VALUES (1, 0, 'Abroad Fund', 0, 0)
+-- Insert the default Admin account
+-- Password is 'abduladmin'. On first login, backend converts it to bcrypt hash.
+INSERT INTO users (username, password, role) 
+VALUES ('Adminabdul', 'abduladmin', 'admin')
 ON DUPLICATE KEY UPDATE id = id;
-
--- The API uses these statements. Values are always bound parameters, never pasted into the SQL.
-
--- Read the one shared account.
--- SELECT revision, account_name, opening_balance, target FROM settings WHERE id = 1 FOR UPDATE;
-
--- Read every entry.
--- SELECT id, type, amount, entry_date, category, note, created_at, updated_at FROM entries;
-
--- Save the account after a change. revision goes up by 1.
--- UPDATE settings SET revision = ?, account_name = ?, opening_balance = ?, target = ? WHERE id = 1;
-
--- Add or replace entries.
--- INSERT INTO entries (id, type, amount, entry_date, category, note, created_at, updated_at) VALUES ?;
-
--- Replace the whole ledger, or clear every entry. Settings stay on clear.
--- DELETE FROM entries;
