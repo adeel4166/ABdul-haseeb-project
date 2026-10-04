@@ -1,7 +1,7 @@
 import { readEntries, readSettings } from "@/lib/storage";
 import type { EntryInput, LedgerSnapshot } from "@/lib/types";
 
-const KEY_STORAGE = "abroad-fund.desk-key";
+const KEY_STORAGE = "abroad-fund.token";
 
 export class DeskError extends Error {
   code?: string;
@@ -12,20 +12,24 @@ export class DeskError extends Error {
   }
 }
 
-export function deskKey() {
+export function getToken() {
   if (typeof window === "undefined") return "";
   return localStorage.getItem(KEY_STORAGE) ?? "";
 }
 
-export function saveDeskKey(key: string) {
-  localStorage.setItem(KEY_STORAGE, key);
+export function saveToken(key: string) {
+  if (!key) {
+    localStorage.removeItem(KEY_STORAGE);
+  } else {
+    localStorage.setItem(KEY_STORAGE, key);
+  }
 }
 
 function headers(): HeadersInit {
-  const key = deskKey();
+  const token = getToken();
   return {
     "Content-Type": "application/json",
-    ...(key ? { "x-desk-key": key } : {}),
+    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
   };
 }
 
@@ -60,6 +64,73 @@ async function request(init?: RequestInit): Promise<LedgerSnapshot> {
 
 export function fetchLedger() {
   return request();
+}
+
+export async function loginRequest(username: string, password: string): Promise<{token: string, user: {role: string}}> {
+  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:4000";
+  const res = await fetch(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Login failed");
+  return data;
+}
+
+export async function signupRequest(username: string, password: string): Promise<any> {
+  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:4000";
+  const res = await fetch(`${base}/api/auth/signup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Signup failed");
+  return data;
+}
+
+export async function getMeRequest() {
+  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:4000";
+  const res = await fetch(`${base}/api/auth/me`, {
+    headers: headers(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to fetch user");
+  return data.user;
+}
+
+export async function changePasswordRequest(currentPassword: string, newPassword: string) {
+  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:4000";
+  const res = await fetch(`${base}/api/auth/change-password`, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to change password");
+  return data;
+}
+
+export async function getAdminUsersRequest() {
+  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:4000";
+  const res = await fetch(`${base}/api/admin/users`, {
+    headers: headers(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to fetch users");
+  return data.users;
+}
+
+export async function deleteAdminUserRequest(id: number) {
+  const base = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") || "http://localhost:4000";
+  const res = await fetch(`${base}/api/admin/users/${id}`, {
+    method: "DELETE",
+    headers: headers(),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to delete user");
+  return data;
 }
 
 export function postLedger(body: unknown) {

@@ -91,7 +91,7 @@ export function YearScreen() {
       <section>
         <h3 className="font-heading text-2xl text-ink">Categories</h3>
         <p className="mt-1 mb-3 text-sm text-muted-foreground">Totals for entries dated in {year}.</p>
-        <CategoryBars items={snapshot.categories} empty="No entries in this year." />
+        <CategoryBars items={snapshot.categories} empty="No entries in this year." totalAmount={settings.target > 0 ? settings.target : (settings.openingBalance + entries.filter(e => e.type === "in").reduce((sum, e) => sum + e.amount, 0))} />
       </section>
     </div>
   );

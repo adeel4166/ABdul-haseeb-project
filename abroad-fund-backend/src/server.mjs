@@ -1,7 +1,8 @@
 import "dotenv/config";
-import { timingSafeEqual } from "node:crypto";
 import cors from "cors";
 import express from "express";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { changeLedger, loadLedger, pool } from "./db.mjs";
 
 const app = express();
@@ -22,25 +23,17 @@ app.use(
       }
       callback(new Error("This site is not allowed to use the desk API."));
     },
-    allowedHeaders: ["Content-Type", "x-desk-key"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-desk-key"],
   }),
 );
 
-function keyMatches(header) {
-  const expected = process.env.LEDGER_KEY || "";
-  if (!expected) return true;
-  const given = header || "";
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey12345";
 
 function snapshot(ledger) {
   return {
     ...ledger,
     storage: "mysql",
-    requiresKey: Boolean(process.env.LEDGER_KEY),
+    requiresKey: false,
   };
 }
 
@@ -53,18 +46,133 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-app.use("/api/ledger", (req, res, next) => {
-  if (!keyMatches(req.get("x-desk-key"))) {
-    res.status(401).json({ error: "This desk is locked.", code: "locked" });
-    return;
+// AUTH ROUTES
+app.post("/api/auth/signup", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: "Username and password required" });
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const [result] = await pool.query(
+      "INSERT INTO users (username, password, role) VALUES (?, ?, 'user')",
+      [username, hashedPassword]
+    );
+    res.json({ success: true, userId: result.insertId });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: "Username already exists" });
+    res.status(500).json({ error: "Could not create user" });
   }
-  next();
 });
 
-app.get("/api/ledger", async (_req, res) => {
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body;
+  try {
+    const [rows] = await pool.query("SELECT * FROM users WHERE username = ?", [username]);
+    const user = rows[0];
+    if (!user) return res.status(401).json({ error: "Invalid credentials" });
+    
+    let valid = false;
+    if (user.password === password) { 
+        // Plain text fallback if created manually via SQL (e.g. Adminabdul)
+        valid = true;
+        // Upgrade to hashed password automatically
+        const hashed = await bcrypt.hash(password, 10);
+        await pool.query("UPDATE users SET password = ? WHERE id = ?", [hashed, user.id]);
+    } else {
+        valid = await bcrypt.compare(password, user.password);
+    }
+    
+    if (!valid) return res.status(401).json({ error: "Invalid credentials" });
+    
+    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  } catch (error) {
+    res.status(500).json({ error: "Login failed" });
+  }
+});
+
+// MIDDLEWARE for authentication
+app.use("/api", (req, res, next) => {
+  if (req.path === "/auth/signup" || req.path === "/auth/login" || req.path === "/health") return next();
+  const authHeader = req.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized. Please login.", code: "unauthorized" });
+  }
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.id;
+    req.userRole = decoded.role;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid or expired token", code: "unauthorized" });
+  }
+});
+
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT id, username, role, created_at FROM users WHERE id = ?", [req.userId]);
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
+app.post("/api/auth/change-password", async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Passwords required" });
+  try {
+    const [rows] = await pool.query("SELECT password FROM users WHERE id = ?", [req.userId]);
+    const user = rows[0];
+    if (!user) return res.status(404).json({ error: "User not found" });
+    
+    let valid = false;
+    if (user.password === currentPassword) {
+        valid = true;
+    } else {
+        valid = await bcrypt.compare(currentPassword, user.password);
+    }
+    
+    if (!valid) return res.status(401).json({ error: "Incorrect current password" });
+    
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await pool.query("UPDATE users SET password = ? WHERE id = ?", [hashed, req.userId]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to change password" });
+  }
+});
+
+// ADMIN ROUTES
+app.get("/api/admin/users", async (req, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: "Admin only" });
+  try {
+    const [users] = await pool.query("SELECT id, username, role, created_at FROM users");
+    res.json({ users });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch users" });
+  }
+});
+
+app.delete("/api/admin/users/:id", async (req, res) => {
+  if (req.userRole !== 'admin') return res.status(403).json({ error: "Admin only" });
+  try {
+    // Delete user's data as well
+    await pool.query("DELETE FROM entries WHERE user_id = ?", [req.params.id]);
+    await pool.query("DELETE FROM settings WHERE user_id = ?", [req.params.id]);
+    await pool.query("DELETE FROM users WHERE id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to delete user" });
+  }
+});
+
+// LEDGER ROUTES
+app.get("/api/ledger", async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
-    res.json(snapshot(await loadLedger()));
+    res.json(snapshot(await loadLedger(req.userId)));
   } catch (error) {
     const message = error instanceof Error ? error.message : "The shared desk could not be opened.";
     res.status(500).json({ error: message });
@@ -74,7 +182,7 @@ app.get("/api/ledger", async (_req, res) => {
 app.post("/api/ledger", async (req, res) => {
   try {
     res.set("Cache-Control", "no-store");
-    res.json(snapshot(await changeLedger(req.body)));
+    res.json(snapshot(await changeLedger(req.body, req.userId)));
   } catch (error) {
     const status = error && typeof error.status === "number" ? error.status : 500;
     const message = error instanceof Error ? error.message : "Could not save.";

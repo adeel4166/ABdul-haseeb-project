@@ -10,9 +10,10 @@ import {
   NotebookText,
   Settings,
   SunMedium,
+  User,
 } from "lucide-react";
 import { AddEntryProvider } from "@/components/add-entry";
-import { DeskKeyScreen } from "@/components/desk-key";
+import { AuthScreen } from "@/components/auth-screen";
 import { EntryDialog } from "@/components/entry-dialog";
 import { Button } from "@/components/ui/button";
 import { useLedger } from "@/lib/ledger-context";
@@ -26,6 +27,7 @@ const dock = [
   { href: "/month", label: "Month", icon: CalendarDays },
   { href: "/year", label: "Year", icon: CalendarRange },
   { href: "/setup", label: "Setup", icon: Settings },
+  { href: "/profile", label: "Profile", icon: User },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -73,7 +75,13 @@ export function AppShell({ children }: { children: ReactNode }) {
               </p>
             ) : null}
             {needsKey ? (
-              <DeskKeyScreen />
+              <AuthScreen onLogin={(isNewUser) => {
+                if (isNewUser) {
+                  window.location.href = "/setup";
+                } else {
+                  window.location.href = "/";
+                }
+              }} />
             ) : unconfigured ? (
               <div className="mx-auto max-w-md space-y-3">
                 <h2 className="font-heading text-3xl text-ink">Connect the shared desk</h2>
@@ -89,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             )}
           </main>
           <nav
-            className="grid shrink-0 grid-cols-6 border-t border-brass/40 bg-[#efe6d4] pb-[env(safe-area-inset-bottom)]"
+            className="grid shrink-0 grid-cols-7 border-t border-brass/40 bg-[#efe6d4] pb-[env(safe-area-inset-bottom)]"
             aria-label="Desk sections"
           >
             {dock.map((item) => {

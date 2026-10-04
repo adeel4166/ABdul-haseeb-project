@@ -44,17 +44,29 @@ function roundAmount(value) {
   return Math.round(Number(value) * 100) / 100;
 }
 
-async function readLedger(conn, lock) {
+async function readLedger(conn, lock, userId) {
   const [settingsRows] = await conn.query(
     `SELECT revision, account_name, opening_balance, target
-     FROM settings WHERE id = 1${lock ? " FOR UPDATE" : ""}`,
+     FROM settings WHERE user_id = ?${lock ? " FOR UPDATE" : ""}`,
+    [userId]
   );
-  const settings = settingsRows[0];
+  
+  // Auto-create settings if not exist for new users
+  let settings = settingsRows[0];
+  if (!settings) {
+    await conn.query(
+      `INSERT INTO settings (user_id, revision, account_name, opening_balance, target) VALUES (?, 0, 'My Fund', 0, 0)`,
+      [userId]
+    );
+    settings = { revision: 0, account_name: 'My Fund', opening_balance: 0, target: 0 };
+  }
+
   const [entryRows] = await conn.query(
     `SELECT id, type, amount, entry_date, category, note, created_at, updated_at
-     FROM entries`,
+     FROM entries WHERE user_id = ?`,
+    [userId]
   );
-  if (!settings) return emptyLedger();
+  
   return {
     revision: Number(settings.revision) || 0,
     accountName: settings.account_name,
@@ -64,19 +76,22 @@ async function readLedger(conn, lock) {
   };
 }
 
-async function writeLedger(conn, ledger) {
+async function writeLedger(conn, ledger, userId) {
   await conn.query(
     `UPDATE settings
      SET revision = ?, account_name = ?, opening_balance = ?, target = ?
-     WHERE id = 1`,
-    [ledger.revision, ledger.accountName, ledger.openingBalance, ledger.target],
+     WHERE user_id = ?`,
+    [ledger.revision, ledger.accountName, ledger.openingBalance, ledger.target, userId]
   );
-  await conn.query("DELETE FROM entries");
+  
+  await conn.query("DELETE FROM entries WHERE user_id = ?", [userId]);
   if (ledger.entries.length === 0) return;
+  
   await conn.query(
-    `INSERT INTO entries (id, type, amount, entry_date, category, note, created_at, updated_at) VALUES ?`,
+    `INSERT INTO entries (user_id, id, type, amount, entry_date, category, note, created_at, updated_at) VALUES ?`,
     [
       ledger.entries.map((entry) => [
+        userId,
         entry.id,
         entry.type,
         entry.amount,
@@ -86,24 +101,24 @@ async function writeLedger(conn, ledger) {
         sqlDateTime(entry.createdAt),
         sqlDateTime(entry.updatedAt),
       ]),
-    ],
+    ]
   );
 }
 
-export async function loadLedger() {
+export async function loadLedger(userId) {
   const conn = await pool.getConnection();
   try {
-    return await readLedger(conn, false);
+    return await readLedger(conn, false, userId);
   } finally {
     conn.release();
   }
 }
 
-export async function changeLedger(body) {
+export async function changeLedger(body, userId) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
-    const current = await readLedger(conn, true);
+    const current = await readLedger(conn, true, userId);
     const result = applyLedgerOp(current, body);
     if (!result.ok) {
       await conn.rollback();
@@ -111,7 +126,7 @@ export async function changeLedger(body) {
       error.status = 400;
       throw error;
     }
-    await writeLedger(conn, result.ledger);
+    await writeLedger(conn, result.ledger, userId);
     await conn.commit();
     return result.ledger;
   } catch (error) {

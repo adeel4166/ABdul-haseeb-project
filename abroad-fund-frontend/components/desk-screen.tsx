@@ -100,13 +100,13 @@ export function DeskScreen() {
           Money out for the whole trip, every month.
           {spent > 0 ? ` Total spent ${formatRs(spent)}.` : ""}
         </p>
-        <CategoryBars items={allSpending} empty="No spending yet." />
+        <CategoryBars items={allSpending} empty="No spending yet." totalAmount={settings.target > 0 ? settings.target : (settings.openingBalance + entries.filter(e => e.type === "in").reduce((sum, e) => sum + e.amount, 0))} />
       </section>
 
       <section>
         <h2 className="font-heading text-2xl text-ink">This month by category</h2>
         <p className="mt-1 mb-3 text-sm text-muted-foreground">Money out only, for the current month.</p>
-        <CategoryBars items={desk.monthCategories} empty="No spending this month yet." />
+        <CategoryBars items={desk.monthCategories} empty="No spending this month yet." totalAmount={settings.target > 0 ? settings.target : (settings.openingBalance + entries.filter(e => e.type === "in").reduce((sum, e) => sum + e.amount, 0))} />
       </section>
 
       <section>

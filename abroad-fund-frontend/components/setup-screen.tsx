@@ -9,10 +9,12 @@ import { todayISO } from "@/lib/dates";
 import { downloadJson, downloadText, entriesToCsv } from "@/lib/export";
 import { parseLedgerFile, toLedgerFile } from "@/lib/ledger";
 import { useLedger } from "@/lib/ledger-context";
+import { useRouter } from "next/navigation";
 import { parseRupees } from "@/lib/money";
 import type { LedgerFile } from "@/lib/types";
 
 export function SetupScreen() {
+  const router = useRouter();
   const { settings, entries, storageMode, requiresKey, saveSettings, replaceLedger, clearEntries } = useLedger();
   const [name, setName] = useState(settings.accountName);
   const [opening, setOpening] = useState(String(settings.openingBalance));
@@ -44,6 +46,7 @@ export function SetupScreen() {
       await saveSettings({ accountName, openingBalance: parsed, target: parsedTarget });
       setError("");
       setMessage("Saved on the shared desk. Phone and laptop will show the same opening balance and target.");
+      router.push("/");
     } catch (caught) {
       setMessage("");
       setError(caught instanceof Error ? caught.message : "Could not save.");
@@ -98,12 +101,7 @@ export function SetupScreen() {
       <div>
         <h2 className="font-heading text-2xl text-ink sm:text-3xl">Setup</h2>
         <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-          There is no login and no bank connection. Entries save to one MySQL database on the server, so a phone and a
-          laptop show the same numbers. Export JSON if you want a file backup.
-          {storageMode === "mysql" ? " This desk is the MySQL copy on your VPS." : ""}
-          {requiresKey
-            ? " The desk key is already set."
-            : " Before the VPS is public, set LEDGER_KEY on the server and enter it once on each device."}
+          Manage your account settings, opening balance, and target amount. Export or import your data as needed.
         </p>
       </div>
 
@@ -127,7 +125,7 @@ export function SetupScreen() {
           </p>
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="trip-target">Trip target (Rs)</Label>
+          <Label htmlFor="trip-target">Target (Rs)</Label>
           <Input
             id="trip-target"
             className="h-10"

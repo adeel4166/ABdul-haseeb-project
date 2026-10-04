@@ -88,7 +88,7 @@ export function MonthScreen() {
       <section>
         <h3 className="font-heading text-2xl text-ink">Categories</h3>
         <div className="mt-3">
-          <CategoryBars items={snapshot.categories} empty="No entries in this month." />
+          <CategoryBars items={snapshot.categories} empty="No entries in this month." totalAmount={settings.target > 0 ? settings.target : (settings.openingBalance + entries.filter(e => e.type === "in").reduce((sum, e) => sum + e.amount, 0))} />
         </div>
       </section>
 

@@ -17,7 +17,7 @@ import {
   fetchLedger,
   legacyLedger,
   replaceLedgerRequest,
-  saveDeskKey,
+  saveToken,
   saveSettingsRequest,
   updateEntryRequest,
 } from "@/lib/desk-api";
@@ -82,7 +82,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }
 
-  async function load(): Promise<"ok" | "locked" | "unconfigured" | "error"> {
+  async function load(): Promise<"ok" | "unauthorized" | "unconfigured" | "error"> {
     try {
       let snapshot = await fetchLedger();
       const legacy = legacyLedger();
@@ -104,10 +104,10 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
       setSyncError("");
       return "ok";
     } catch (error) {
-      if (error instanceof DeskError && error.code === "locked") {
-        setNeedsKey(true);
+      if (error instanceof DeskError && error.code === "unauthorized") {
+        setNeedsKey(true); // Using needsKey state for backward compatibility but it means needsAuth
         setReady(false);
-        return "locked";
+        return "unauthorized";
       }
       if (error instanceof DeskError && error.code === "unconfigured") {
         setUnconfigured(true);
@@ -149,7 +149,7 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "Could not save.";
       setSyncError(message);
-      if (error instanceof DeskError && error.code === "locked") setNeedsKey(true);
+      if (error instanceof DeskError && error.code === "unauthorized") setNeedsKey(true);
       try {
         apply(await fetchLedger());
       } catch {
@@ -178,10 +178,10 @@ export function LedgerProvider({ children }: { children: ReactNode }) {
     entries,
     remaining: remainingBalance(entries, settings.openingBalance),
     unlock: async (key) => {
-      saveDeskKey(key.trim());
+      saveToken(key.trim());
       setSyncError("");
       const result = await load();
-      if (result === "locked") throw new DeskError("That key does not open this desk.", "locked");
+      if (result === "unauthorized") throw new DeskError("That token does not open this desk.", "unauthorized");
       if (result !== "ok") throw new DeskError("The shared desk could not be opened.");
     },
     saveSettings: (next) =>
