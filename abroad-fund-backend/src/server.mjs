@@ -16,13 +16,7 @@ const origins = (process.env.CORS_ORIGIN || "http://localhost:3847")
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (!origin || origins.includes("*") || origins.includes(origin)) {
-        callback(null, true);
-        return;
-      }
-      callback(new Error("This site is not allowed to use the desk API."));
-    },
+    origin: "*",
     allowedHeaders: ["Content-Type", "Authorization", "x-desk-key"],
   }),
 );
