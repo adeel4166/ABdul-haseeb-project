@@ -53,7 +53,7 @@ app.post("/api/auth/signup", async (req, res) => {
     res.json({ success: true, userId: result.insertId });
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') return res.status(400).json({ error: "Username already exists" });
-    res.status(500).json({ error: "Could not create user" });
+    res.status(500).json({ error: "Could not create user: " + error.message });
   }
 });
 
@@ -80,7 +80,7 @@ app.post("/api/auth/login", async (req, res) => {
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
   } catch (error) {
-    res.status(500).json({ error: "Login failed" });
+    res.status(500).json({ error: "Login failed: " + error.message });
   }
 });
 
